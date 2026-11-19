@@ -1,0 +1,24 @@
+[package]
+name = "rust_plugin"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Rust as a source language (pulsar.rust): one Language registration (the .rs extension and rust-analyzer: discovery, initialization options, progress, quick fixes and the Rust-only requests). It has no editor; code editing is the code editor's job."
+
+[dependencies]
+# The registration types: Language, the server spec.
+pulsar_language = { workspace = true }
+pulsar_plugins = { workspace = true }
+# The settings the group's values were saved under before this plugin took it over.
+pulsar_settings = { workspace = true }
+# LSP edit and URI helpers (the quick fixes rust-analyzer ships in diagnostics).
+pulsar_lsp = { workspace = true }
+anyhow = { workspace = true }
+# The release download is verified against GitHub's published sha256, then gunzipped.
+sha2 = { workspace = true }
+flate2 = "1"
+serde_json = { workspace = true }
+tracing = { workspace = true }
+
+[lints]
+workspace = true

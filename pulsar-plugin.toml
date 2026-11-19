@@ -1,0 +1,15 @@
+# The `pulsar.rust` plugin's descriptor. A project enables or disables it in
+# its Pulsar.toml (`[plugins]`); disabled, `.rs` files have no language server
+# (no rust-analyzer, no diagnostics, no status entry, no settings group). Its
+# root crate carries this file (`pulsar_plugins::installed!`).
+id = "pulsar.rust"
+name = "Rust"
+description = "Rust as a source language: rust-analyzer for completion, diagnostics and navigation in .rs files"
+enabled_by_default = true
+requires = []
+
+# The plugin's root crate (the package in this directory): the one place it
+# registers everything it contributes. An editor tool: a game never links it
+# (the game crate is Rust by construction, built by cargo, not a script).
+root = "rust_plugin"
+editor_only = true
