@@ -17,8 +17,7 @@ use pulsar_language::spec::{
     ProgressEvent, ProgressKind, ProgressText, QuickFix, QuickFixEdit, ReadinessRule, RootStrategy,
     ServerCommand, ServerCommandSpec, ServerContext, ServerHooks, ServerSignal,
 };
-use pulsar_lsp::code_actions::{edits_in_workspace_edit, quick_edit_of};
-use pulsar_lsp::uri_to_path;
+use pulsar_language::lsp_edits::{edits_in_workspace_edit, uri_to_path};
 use serde_json::{json, Value};
 
 use crate::discovery;
@@ -187,7 +186,7 @@ fn fixes_in_data(raw: &Value) -> Vec<QuickFix> {
             let edits = edits_in_workspace_edit(fix.get("edit")?);
             (!edits.is_empty()).then(|| QuickFix {
                 title,
-                edits: edits.into_iter().map(quick_edit_of).collect(),
+                edits,
             })
         })
         .collect()

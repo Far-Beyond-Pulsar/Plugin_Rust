@@ -14,8 +14,6 @@ pulsar_language = { workspace = true }
 pulsar_plugins = { workspace = true }
 # The settings the group's values were saved under before this plugin took it over.
 pulsar_settings = { workspace = true }
-# LSP edit and URI helpers (the quick fixes rust-analyzer ships in diagnostics).
-pulsar_lsp = { workspace = true }
 anyhow = { workspace = true }
 # The release download is verified against the sha256 pinned in discovery.rs,
 # then gunzipped (or, on Windows, unzipped in process).
