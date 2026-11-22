@@ -7,7 +7,6 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
-
 /// Validate that a path is a safe location for a rust-analyzer binary.
 /// Returns true if the path is in a trusted directory or has an expected filename.
 // Real machine: locates and installs the rust-analyzer binary (PATH, ~/.cargo/bin, the engine's deps dir), outside any project.
@@ -386,6 +385,41 @@ pub(super) fn install_rust_analyzer_via_rustup() -> Result<PathBuf> {
     ))
 }
 
+/// The rust-analyzer release the managed install downloads, and the sha256 of
+/// each platform's asset in it, pinned here (#1941): the digest is not read
+/// from the same place as the file, so a replaced release asset is refused.
+/// Bump both together (`gh api repos/rust-lang/rust-analyzer/releases/tags/<tag>
+/// --jq '.assets[] | "\(.name) \(.digest)"'`).
+pub(super) const RELEASE_TAG: &str = "2026-11-16";
+
+/// `(asset, sha256)` for every platform [`release_asset_name`] names.
+pub(super) const RELEASE_ASSETS: [(&str, &str); 6] = [
+    (
+        "rust-analyzer-x86_64-pc-windows-msvc.zip",
+        "dbf0c36ec54cf727d34cc40c9994fe71b7d52e3c28a3112c3deca1aba46fbc8f",
+    ),
+    (
+        "rust-analyzer-aarch64-pc-windows-msvc.zip",
+        "2e8fd876300eeee87afd6de18c79eb17bab425a9b755043c63d5023d58de37b7",
+    ),
+    (
+        "rust-analyzer-x86_64-unknown-linux-gnu.gz",
+        "4a08727a03094e5114db4438e4bd1d6182cc26eff37d6962115ea1ec1a491ca3",
+    ),
+    (
+        "rust-analyzer-aarch64-unknown-linux-gnu.gz",
+        "73d8b9b87384b3115a183a8a51db9f7c205ce4c89ea511f3c8c8fea863038a50",
+    ),
+    (
+        "rust-analyzer-x86_64-apple-darwin.gz",
+        "6901d956b4f2b091343eaf3570944098488f3ffec018987145285ed8253c07d2",
+    ),
+    (
+        "rust-analyzer-aarch64-apple-darwin.gz",
+        "608b7c7d6bec1fcd6c964578b1f8234888afe6d6c0e7915284f1e2fd36ef1343",
+    ),
+];
+
 /// The release asset for this platform: `rust-analyzer-<target>.gz` (a gzipped
 /// executable) or, on Windows, `.zip`.
 pub(super) fn release_asset_name() -> Result<String> {
@@ -408,96 +442,17 @@ pub(super) fn release_asset_name() -> Result<String> {
     Ok(format!("rust-analyzer-{target}.{extension}"))
 }
 
-pub(super) fn download_file(url: &str, dest: &PathBuf) -> Result<()> {
-    if cfg!(windows) {
-        // Inside a PowerShell single-quoted string only `'` is special,
-        // and it is escaped by doubling; nothing else is interpolated.
-        let quote = |s: &str| format!("'{}'", s.replace('\'', "''"));
-        let powershell_result = Command::new("powershell")
-            .args([
-                "-NoProfile",
-                "-Command",
-                &format!(
-                    "Invoke-WebRequest -Uri {} -OutFile {}",
-                    quote(url),
-                    quote(&dest.to_string_lossy())
-                ),
-            ])
-            .output();
-
-        if let Ok(output) = powershell_result {
-            if output.status.success() {
-                return Ok(());
-            }
-        }
-
-        let curl_result = Command::new("curl")
-            .args(["-fL", url, "-o", &dest.to_string_lossy()])
-            .output()
-            .map_err(|e| anyhow!("failed to run downloader: {}", e))?;
-
-        if curl_result.status.success() {
-            return Ok(());
-        }
-
-        return Err(anyhow!(
-            "download failed: {}",
-            output_text(&curl_result).trim()
-        ));
-    }
-
-    let curl_result = Command::new("curl")
-        .args(["-fL", url, "-o", &dest.to_string_lossy()])
-        .output();
-    if let Ok(output) = curl_result {
-        if output.status.success() {
-            return Ok(());
-        }
-    }
-
-    let wget_result = Command::new("wget")
-        .args(["-O", &dest.to_string_lossy(), url])
-        .output()
-        .map_err(|e| anyhow!("failed to run downloader: {}", e))?;
-
-    if wget_result.status.success() {
-        return Ok(());
-    }
-
-    Err(anyhow!(
-        "download failed: {}",
-        output_text(&wget_result).trim()
+/// The download URL and the pinned sha256 of `asset_name` in [`RELEASE_TAG`].
+/// An asset with no pin is refused: nothing unverified is installed.
+pub(super) fn pinned_asset(asset_name: &str) -> Result<(String, &'static str)> {
+    let (_, digest) = RELEASE_ASSETS
+        .iter()
+        .find(|(name, _)| *name == asset_name)
+        .ok_or_else(|| anyhow!("no pinned rust-analyzer download for {asset_name}"))?;
+    Ok((
+        format!("https://github.com/rust-lang/rust-analyzer/releases/download/{RELEASE_TAG}/{asset_name}"),
+        digest,
     ))
-}
-
-/// The download URL and the sha256 GitHub publishes for `asset_name` in the
-/// release JSON (`assets[].digest`, `"sha256:<hex>"`). An asset with no
-/// digest is refused: nothing unverified is installed.
-pub(super) fn asset_with_digest(release: &str, asset_name: &str) -> Result<(String, String)> {
-    let json: serde_json::Value = serde_json::from_str(release)
-        .map_err(|e| anyhow!("the release description is not JSON: {e}"))?;
-    let asset = json
-        .get("assets")
-        .and_then(|a| a.as_array())
-        .and_then(|assets| {
-            assets
-                .iter()
-                .find(|asset| asset.get("name").and_then(|n| n.as_str()) == Some(asset_name))
-        })
-        .ok_or_else(|| anyhow!("the latest rust-analyzer release has no asset {asset_name}"))?;
-    let url = asset
-        .get("browser_download_url")
-        .and_then(|u| u.as_str())
-        .ok_or_else(|| anyhow!("asset {asset_name} has no download URL"))?;
-    let digest = asset
-        .get("digest")
-        .and_then(|d| d.as_str())
-        .and_then(|d| d.strip_prefix("sha256:"))
-        .filter(|d| d.len() == 64 && d.chars().all(|c| c.is_ascii_hexdigit()))
-        .ok_or_else(|| {
-            anyhow!("asset {asset_name} has no sha256 digest to verify the download against")
-        })?;
-    Ok((url.to_string(), digest.to_ascii_lowercase()))
 }
 
 /// Refuse `bytes` unless their sha256 is `expected` (lower-case hex).
@@ -511,7 +466,7 @@ pub(super) fn verify_sha256(bytes: &[u8], expected: &str) -> Result<()> {
         Ok(())
     } else {
         Err(anyhow!(
-            "the download does not match the release's published digest (sha256 {actual}, expected {expected}); it was discarded"
+            "the download does not match the digest pinned in this plugin (sha256 {actual}, expected {expected}); it was discarded"
         ))
     }
 }
@@ -526,10 +481,23 @@ pub(super) fn gunzip(bytes: &[u8]) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-/// Download rust-analyzer from its latest GitHub release into the engine deps
-/// directory, verified against the sha256 the release publishes for the asset
-/// before it is unpacked or run. (The download used to take an asset name that
-/// no release has, with no check at all.)
+/// `rust-analyzer.exe` out of the Windows release zip, in process.
+pub(super) fn unzip_executable(bytes: &[u8]) -> Result<Vec<u8>> {
+    use std::io::Read as _;
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))
+        .map_err(|e| anyhow!("the download is not a zip file: {e}"))?;
+    let mut file = archive
+        .by_name("rust-analyzer.exe")
+        .map_err(|e| anyhow!("the download has no rust-analyzer.exe: {e}"))?;
+    let mut out = Vec::new();
+    file.read_to_end(&mut out)
+        .map_err(|e| anyhow!("could not unpack rust-analyzer.exe: {e}"))?;
+    Ok(out)
+}
+
+/// Download rust-analyzer's pinned release ([`RELEASE_TAG`]) into the engine
+/// deps directory, in process, verified against the sha256 pinned for the
+/// asset before it is unpacked or run.
 // Real machine: locates and installs the rust-analyzer binary (PATH, ~/.cargo/bin, the engine's deps dir), outside any project.
 #[allow(clippy::disallowed_methods)]
 pub(super) fn download_rust_analyzer_binary() -> Result<PathBuf> {
@@ -542,50 +510,16 @@ pub(super) fn download_rust_analyzer_binary() -> Result<PathBuf> {
     fs::create_dir_all(deps_dir)?;
 
     let asset_name = release_asset_name()?;
-    let scratch = deps_dir.join("rust-analyzer-download");
-    let _ = fs::remove_dir_all(&scratch);
-    fs::create_dir_all(&scratch)?;
-    let result = (|| {
-        let release_file = scratch.join("release.json");
-        download_file(
-            "https://api.github.com/repos/rust-lang/rust-analyzer/releases/latest",
-            &release_file,
-        )?;
-        let (url, digest) = asset_with_digest(&fs::read_to_string(&release_file)?, &asset_name)?;
-        let asset_file = scratch.join(&asset_name);
-        tracing::debug!("   Downloading from: {}", url);
-        download_file(&url, &asset_file)?;
-        let bytes = fs::read(&asset_file)?;
-        verify_sha256(&bytes, &digest)?;
-
-        if asset_name.ends_with(".gz") {
-            fs::write(&deps_path, gunzip(&bytes)?)?;
-        } else {
-            // A zip holding rust-analyzer.exe: PowerShell's own Expand-Archive.
-            let quote = |p: &std::path::Path| format!("'{}'", p.to_string_lossy().replace('\'', "''"));
-            let unpacked = scratch.join("unpacked");
-            let output = Command::new("powershell")
-                .args([
-                    "-NoProfile",
-                    "-NonInteractive",
-                    "-Command",
-                    &format!(
-                        "Expand-Archive -LiteralPath {} -DestinationPath {} -Force",
-                        quote(&asset_file),
-                        quote(&unpacked)
-                    ),
-                ])
-                .output()
-                .map_err(|e| anyhow!("failed to unpack the download: {e}"))?;
-            if !output.status.success() {
-                return Err(anyhow!("failed to unpack the download: {}", output_text(&output).trim()));
-            }
-            fs::copy(unpacked.join("rust-analyzer.exe"), &deps_path)?;
-        }
-        Ok(())
-    })();
-    let _ = fs::remove_dir_all(&scratch);
-    result?;
+    let (url, digest) = pinned_asset(&asset_name)?;
+    tracing::debug!("   Downloading from: {}", url);
+    let bytes = pulsar_language::download::fetch(&url).map_err(|e| anyhow!(e))?;
+    verify_sha256(&bytes, digest)?;
+    let executable = if asset_name.ends_with(".gz") {
+        gunzip(&bytes)?
+    } else {
+        unzip_executable(&bytes)?
+    };
+    fs::write(&deps_path, executable)?;
 
     #[cfg(unix)]
     {
@@ -597,7 +531,10 @@ pub(super) fn download_rust_analyzer_binary() -> Result<PathBuf> {
 
     let version = verify_rust_analyzer_executable(&deps_path)
         .map_err(|e| anyhow!("Downloaded rust-analyzer but verification failed: {}", e))?;
-    tracing::debug!("✓ rust-analyzer installed successfully! Version: {}", version);
+    tracing::debug!(
+        "✓ rust-analyzer installed successfully! Version: {}",
+        version
+    );
     Ok(deps_path)
 }
 
@@ -605,20 +542,23 @@ pub(super) fn download_rust_analyzer_binary() -> Result<PathBuf> {
 mod download_tests {
     use super::*;
 
-    const RELEASE: &str = r#"{ "tag_name": "x", "assets": [
-        { "name": "rust-analyzer-x86_64-unknown-linux-gnu.gz",
-          "browser_download_url": "https://github.com/rust-lang/rust-analyzer/releases/download/x/a.gz",
-          "digest": "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" },
-        { "name": "no-digest.gz", "browser_download_url": "https://example/b.gz" } ] }"#;
-
     #[test]
-    fn the_asset_and_its_published_digest_are_found_and_a_missing_digest_is_refused() {
-        let (url, digest) = asset_with_digest(RELEASE, "rust-analyzer-x86_64-unknown-linux-gnu.gz").unwrap();
-        assert!(url.ends_with("a.gz"));
-        assert_eq!(digest, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
-        assert!(asset_with_digest(RELEASE, "no-digest.gz").unwrap_err().to_string().contains("no sha256 digest"));
-        assert!(asset_with_digest(RELEASE, "absent.gz").is_err());
-        assert!(asset_with_digest("not json", "a").is_err());
+    fn every_platform_asset_has_a_pinned_sha256_on_the_pinned_tag() {
+        for (name, digest) in RELEASE_ASSETS {
+            assert_eq!(digest.len(), 64, "{name}");
+            assert!(
+                digest
+                    .chars()
+                    .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+                "{name}"
+            );
+            let (url, pinned) = pinned_asset(name).unwrap();
+            assert_eq!(pinned, digest);
+            assert_eq!(url, format!("https://github.com/rust-lang/rust-analyzer/releases/download/{RELEASE_TAG}/{name}"));
+        }
+        // This machine's asset is one of them.
+        assert!(pinned_asset(&release_asset_name().unwrap()).is_ok());
+        assert!(pinned_asset("rust-analyzer-riscv64.gz").is_err());
     }
 
     #[test]
@@ -626,14 +566,20 @@ mod download_tests {
         let abc = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
         assert!(verify_sha256(b"abc", abc).is_ok());
         let error = verify_sha256(b"abd", abc).unwrap_err().to_string();
-        assert!(error.contains("does not match") && error.contains("discarded"), "{error}");
+        assert!(
+            error.contains("does not match") && error.contains("discarded"),
+            "{error}"
+        );
     }
 
     #[test]
     fn the_asset_names_are_the_ones_releases_publish_and_a_gz_is_unpacked() {
         let name = release_asset_name().unwrap();
-        assert!(name.starts_with("rust-analyzer-") && (name.ends_with(".gz") || name.ends_with(".zip")), "{name}");
+        assert!(
+            name.starts_with("rust-analyzer-") && (name.ends_with(".gz") || name.ends_with(".zip")),
+            "{name}"
+        );
         assert!(gunzip(b"not gzip").is_err());
+        assert!(unzip_executable(b"not zip").is_err());
     }
 }
-

@@ -74,12 +74,19 @@ mod tests {
     #[test]
     fn the_registry_finds_it_for_rs_files_once_the_plugin_is_enabled() {
         let registry = LanguageRegistry::current();
-        assert_eq!(registry.for_path(Path::new("/p/src/main.rs")).map(|l| l.id), Some("rust"));
         assert_eq!(
-            registry.server_for_path(Path::new("/p/src/main.rs")).map(|(_, spec)| spec.id),
+            registry.for_path(Path::new("/p/src/main.rs")).map(|l| l.id),
+            Some("rust")
+        );
+        assert_eq!(
+            registry
+                .server_for_path(Path::new("/p/src/main.rs"))
+                .map(|(_, spec)| spec.id),
             Some("rust-analyzer")
         );
-        assert!(registry.server_for_path(Path::new("/p/readme.md")).is_none());
+        assert!(registry
+            .server_for_path(Path::new("/p/readme.md"))
+            .is_none());
     }
 
     #[test]

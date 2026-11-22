@@ -15,9 +15,11 @@ pulsar_settings = { workspace = true }
 # LSP edit and URI helpers (the quick fixes rust-analyzer ships in diagnostics).
 pulsar_lsp = { workspace = true }
 anyhow = { workspace = true }
-# The release download is verified against GitHub's published sha256, then gunzipped.
+# The release download is verified against the sha256 pinned in discovery.rs,
+# then gunzipped (or, on Windows, unzipped in process).
 sha2 = { workspace = true }
 flate2 = "1"
+zip = { version = "9", default-features = false, features = ["deflate"] }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 

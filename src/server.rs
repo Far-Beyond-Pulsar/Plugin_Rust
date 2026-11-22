@@ -14,8 +14,8 @@ use std::time::Duration;
 
 use pulsar_language::spec::{
     section_of, CommandContext, CommandResult, LanguageServerSpec, LocateContext, LocateError,
-    ProgressEvent, ProgressKind, ProgressText, QuickFix, QuickFixEdit, ReadinessRule,
-    RootStrategy, ServerCommand, ServerCommandSpec, ServerContext, ServerHooks, ServerSignal,
+    ProgressEvent, ProgressKind, ProgressText, QuickFix, QuickFixEdit, ReadinessRule, RootStrategy,
+    ServerCommand, ServerCommandSpec, ServerContext, ServerHooks, ServerSignal,
 };
 use pulsar_lsp::code_actions::{edits_in_workspace_edit, quick_edit_of};
 use pulsar_lsp::uri_to_path;
@@ -78,7 +78,9 @@ fn locate(ctx: &LocateContext) -> Result<ServerCommand, LocateError> {
         )));
     }
     ctx.report("Installing rust-analyzer...");
-    Ok(ServerCommand::new(discovery::install_rust_analyzer_to_deps()?))
+    Ok(ServerCommand::new(
+        discovery::install_rust_analyzer_to_deps()?,
+    ))
 }
 
 fn initialization_options(_: &ServerContext) -> Value {
@@ -135,7 +137,10 @@ fn progress(event: &ProgressEvent) -> Option<ProgressText> {
             } else {
                 title.to_string()
             };
-            Some(ProgressText { text, fraction: Some(0.0) })
+            Some(ProgressText {
+                text,
+                fraction: Some(0.0),
+            })
         }
         ProgressKind::Report => {
             let message = event.message.unwrap_or("");
@@ -322,19 +327,50 @@ mod tests {
         }
     }
 
-    fn event<'a>(kind: ProgressKind, title: &'a str, message: Option<&'a str>, pct: Option<u32>) -> ProgressEvent<'a> {
-        ProgressEvent { token: "t", kind, title, message, percentage: pct }
+    fn event<'a>(
+        kind: ProgressKind,
+        title: &'a str,
+        message: Option<&'a str>,
+        pct: Option<u32>,
+    ) -> ProgressEvent<'a> {
+        ProgressEvent {
+            token: "t",
+            kind,
+            title,
+            message,
+            percentage: pct,
+        }
     }
 
     #[test]
     fn cargo_and_rustc_titles_get_their_own_wording() {
-        assert_eq!(progress(&event(ProgressKind::Begin, "Fetching", None, None)).unwrap().text, "Loading metadata...");
-        assert_eq!(progress(&event(ProgressKind::Begin, "Indexing", None, None)).unwrap().text, "Indexing crates...");
-        assert_eq!(progress(&event(ProgressKind::Begin, "cargo check", None, None)).unwrap().text, "cargo check");
+        assert_eq!(
+            progress(&event(ProgressKind::Begin, "Fetching", None, None))
+                .unwrap()
+                .text,
+            "Loading metadata..."
+        );
+        assert_eq!(
+            progress(&event(ProgressKind::Begin, "Indexing", None, None))
+                .unwrap()
+                .text,
+            "Indexing crates..."
+        );
+        assert_eq!(
+            progress(&event(ProgressKind::Begin, "cargo check", None, None))
+                .unwrap()
+                .text,
+            "cargo check"
+        );
         let report = progress(&event(ProgressKind::Report, "", Some("3/10"), Some(30))).unwrap();
         assert_eq!(report.text, "Analyzing (3/10)...");
         assert_eq!(report.fraction, Some(0.3));
-        assert_eq!(progress(&event(ProgressKind::Report, "", None, Some(7))).unwrap().text, "7%");
+        assert_eq!(
+            progress(&event(ProgressKind::Report, "", None, Some(7)))
+                .unwrap()
+                .text,
+            "7%"
+        );
         assert!(progress(&event(ProgressKind::End, "", None, None)).is_none());
     }
 
@@ -344,7 +380,10 @@ mod tests {
             notification("rust-analyzer/serverStatus", &json!({ "quiescent": true })),
             Some(ServerSignal::Ready)
         );
-        assert_eq!(notification("rust-analyzer/serverStatus", &json!({ "quiescent": false })), None);
+        assert_eq!(
+            notification("rust-analyzer/serverStatus", &json!({ "quiescent": false })),
+            None
+        );
         assert_eq!(notification("other", &json!({ "quiescent": true })), None);
     }
 
@@ -352,7 +391,10 @@ mod tests {
     fn the_configuration_section_is_the_options_object() {
         let options = configuration(&context(), "rust-analyzer");
         assert_eq!(options["check"]["command"], "clippy");
-        assert_eq!(configuration(&context(), "rust-analyzer.check.command"), json!("clippy"));
+        assert_eq!(
+            configuration(&context(), "rust-analyzer.check.command"),
+            json!("clippy")
+        );
         assert_eq!(configuration(&context(), "something-else"), Value::Null);
     }
 
@@ -362,12 +404,18 @@ mod tests {
         ctx.settings.initialization_options = Some(json!({ "check": { "command": "check" } }));
         let options = SPEC.effective_initialization_options(&ctx);
         assert_eq!(options["check"]["command"], "check");
-        assert_eq!(options["procMacro"]["enable"], true, "the rest is untouched");
+        assert_eq!(
+            options["procMacro"]["enable"], true,
+            "the rest is untouched"
+        );
     }
 
     #[test]
     fn it_announces_the_status_extension() {
-        assert_eq!(client_capabilities()["experimental"]["serverStatusNotification"], true);
+        assert_eq!(
+            client_capabilities()["experimental"]["serverStatusNotification"],
+            true
+        );
     }
 
     #[test]
@@ -376,7 +424,15 @@ mod tests {
         assert_eq!(SPEC.readiness, ReadinessRule::Signal);
         assert_eq!(SPEC.id, ID);
         let ids: Vec<_> = SPEC.commands.iter().map(|command| command.id).collect();
-        assert_eq!(ids, ["parent-module", "open-cargo-toml", "expand-macro", "reload-workspace"]);
+        assert_eq!(
+            ids,
+            [
+                "parent-module",
+                "open-cargo-toml",
+                "expand-macro",
+                "reload-workspace"
+            ]
+        );
     }
 
     #[test]
@@ -414,6 +470,12 @@ mod tests {
         let actions = removals_in_related_information(&raw, "/p/a.rs");
         assert_eq!(actions.len(), 1);
         assert_eq!(actions[0].title, "Remove the unused import");
-        assert_eq!((actions[0].edits[0].start_line, actions[0].edits[0].end_column), (2, 13));
+        assert_eq!(
+            (
+                actions[0].edits[0].start_line,
+                actions[0].edits[0].end_column
+            ),
+            (2, 13)
+        );
     }
 }
