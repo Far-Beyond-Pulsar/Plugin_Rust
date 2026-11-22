@@ -7,6 +7,8 @@ publish = false
 description = "Rust as a source language (pulsar.rust): one Language registration (the .rs extension and rust-analyzer: discovery, initialization options, progress, quick fixes and the Rust-only requests). It has no editor; code editing is the code editor's job."
 
 [dependencies]
+# The plugin library's editor plugin entry point (feature `dll`).
+plugin_editor_api = { workspace = true, optional = true }
 # The registration types: Language, the server spec.
 pulsar_language = { workspace = true }
 pulsar_plugins = { workspace = true }
@@ -25,3 +27,12 @@ tracing = { workspace = true }
 
 [lints]
 workspace = true
+
+# Also the plugin as a library of its own (feature `dll`, loaded by the editor).
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# The plugin as a library of its own, loaded by the editor from plugins/editor:
+# cargo build -p <this package> --release --features dll
+dll = ["dep:plugin_editor_api", "plugin_editor_api/editor", "plugin_editor_api/shared-dylibs"]
