@@ -1,7 +1,7 @@
 [package]
 name = "rust_plugin"
 license = "MPL-2.0"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 publish = false
 description = "Rust as a source language (pulsar.rust): one Language registration (the .rs extension and rust-analyzer: discovery, initialization options, progress, quick fixes and the Rust-only requests). It has no editor; code editing is the code editor's job."
