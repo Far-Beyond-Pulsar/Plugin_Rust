@@ -12,12 +12,12 @@
 
 use std::time::Duration;
 
+use pulsar_language::lsp_edits::{edits_in_workspace_edit, uri_to_path};
 use pulsar_language::spec::{
     section_of, CommandContext, CommandResult, LanguageServerSpec, LocateContext, LocateError,
     ProgressEvent, ProgressKind, ProgressText, QuickFix, QuickFixEdit, ReadinessRule, RootStrategy,
     ServerCommand, ServerCommandSpec, ServerContext, ServerHooks, ServerSignal,
 };
-use pulsar_language::lsp_edits::{edits_in_workspace_edit, uri_to_path};
 use serde_json::{json, Value};
 
 use crate::discovery;
@@ -184,10 +184,7 @@ fn fixes_in_data(raw: &Value) -> Vec<QuickFix> {
         .filter_map(|fix| {
             let title = fix.get("title")?.as_str()?.to_string();
             let edits = edits_in_workspace_edit(fix.get("edit")?);
-            (!edits.is_empty()).then(|| QuickFix {
-                title,
-                edits,
-            })
+            (!edits.is_empty()).then(|| QuickFix { title, edits })
         })
         .collect()
 }

@@ -11,6 +11,10 @@
 //! understands (Go to Parent Module, Open Cargo.toml, Expand Macro, Reload
 //! Workspace).
 //!
+//! It also registers rust-glancer (`glancer.rs`) as a
+//! [`ServerAlternative`](pulsar_language::ServerAlternative): an experimental
+//! choice in the Server dropdown of the language server's settings.
+//!
 //! The host (`pulsar_lsp`) names no server: it routes a file to the language
 //! the registry says owns it and runs that language's spec. A project that
 //! disables this plugin has no Rust language: no server for `.rs`, no
@@ -21,6 +25,7 @@
 //! by cargo (`core_project_builder`), not a script this plugin compiles.
 
 mod discovery;
+mod glancer;
 mod server;
 
 pub use server::{ID, SPEC};
@@ -55,6 +60,8 @@ pub fn build(p: &mut pulsar_plugins::PluginBuilder) {
         bytes: include_bytes!("../icon.png"),
     });
     p.add(LANGUAGE);
+    // The experimental server that can run in rust-analyzer's place.
+    p.add(glancer::ALTERNATIVE);
     p.add(pulsar_settings::plugin::SettingsMove {
         origin: p.origin(),
         id: ID,
